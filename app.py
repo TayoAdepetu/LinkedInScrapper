@@ -26,7 +26,7 @@ def parse_html(html_content):
         company_tag = item.find('a', {'data-anonymize': 'company-name'})
         
         new_leads.append({
-            'Date Added': timestamp,
+            # 'Date Added': timestamp,
             'Name': name,
             'Role': title_tag.get_text(strip=True) if title_tag else "N/A",
             'Company': company_tag.get_text(strip=True) if company_tag else "N/A"
