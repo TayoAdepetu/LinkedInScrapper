@@ -8,7 +8,6 @@ from io import BytesIO
 st.set_page_config(page_title="LinkedIn Lead Extractor", page_icon="📊")
 
 # --- INITIALIZE SESSION STATE ---
-# This keeps your data even when the app re-runs
 if 'leads_list' not in st.session_state:
     st.session_state.leads_list = []
 
@@ -17,7 +16,6 @@ def parse_html(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     new_leads = []
     items = soup.find_all('li', class_='artdeco-list__item')
-    timestamp = datetime.now().strftime("%Y-%m-%d")
     
     for item in items:
         name_tag = item.find('span', class_='a11y-text')
@@ -26,7 +24,6 @@ def parse_html(html_content):
         company_tag = item.find('a', {'data-anonymize': 'company-name'})
         
         new_leads.append({
-            # 'Date Added': timestamp,
             'Name': name,
             'Role': title_tag.get_text(strip=True) if title_tag else "N/A",
             'Company': company_tag.get_text(strip=True) if company_tag else "N/A"
@@ -44,9 +41,7 @@ if st.button("Extract & Add Leads"):
     if html_input.strip():
         extracted = parse_html(html_input)
         if extracted:
-            # Add to the session list and remove duplicates
             combined = st.session_state.leads_list + extracted
-            # Convert to DF to drop duplicates easily
             df_temp = pd.DataFrame(combined).drop_duplicates(subset=['Name', 'Company'])
             st.session_state.leads_list = df_temp.to_dict('records')
             st.success(f"Added {len(extracted)} leads! Total in list: {len(st.session_state.leads_list)}")
@@ -59,21 +54,26 @@ if st.button("Extract & Add Leads"):
 if st.session_state.leads_list:
     df = pd.DataFrame(st.session_state.leads_list)
     st.divider()
-    st.subheader("Current Lead List")
-    st.dataframe(df, use_container_width=True)
-
-    # Conversion logic for Excel Download
+    
+    # 1. Prepare the Excel file in memory FIRST
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Leads')
     
-    st.download_button(
-        label="📥 Download Excel Sheet",
-        data=output.getvalue(),
-        file_name="extracted_leads.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # 2. Place the Download Button and Clear Button side-by-side at the top
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        st.download_button(
+            label="📥 Download Excel",
+            data=output.getvalue(),
+            file_name="extracted_leads.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    with col2:
+        if st.button("🗑️ Clear List"):
+            st.session_state.leads_list = []
+            st.rerun()
 
-    # if st.button("🗑️ Clear All Leads"):
-    #     st.session_state.leads_list = []
-    #     st.rerun()
+    # 3. Finally, show the table
+    st.subheader("Current Lead List")
+    st.dataframe(df, use_container_width=True)
