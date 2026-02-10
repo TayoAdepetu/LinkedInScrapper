@@ -74,6 +74,6 @@ if st.session_state.leads_list:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    if st.button("🗑️ Clear All Leads"):
-        st.session_state.leads_list = []
-        st.rerun()
+    # if st.button("🗑️ Clear All Leads"):
+    #     st.session_state.leads_list = []
+    #     st.rerun()
