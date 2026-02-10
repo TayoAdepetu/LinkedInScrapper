@@ -69,10 +69,10 @@ if st.session_state.leads_list:
             file_name="extracted_leads.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    with col2:
-        if st.button("🗑️ Clear List"):
-            st.session_state.leads_list = []
-            st.rerun()
+    # with col2:
+    #     if st.button("🗑️ Clear List"):
+    #         st.session_state.leads_list = []
+    #         st.rerun()
 
     # 3. Finally, show the table
     st.subheader("Current Lead List")
