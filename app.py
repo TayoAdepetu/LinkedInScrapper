@@ -57,18 +57,6 @@ if st.button("Extract & Add Leads"):
 
 # --- DATA DISPLAY & DOWNLOAD ---
 if st.session_state.leads_list:
-
-    st.download_button(
-        label="📥 Download Excel Sheet",
-        data=output.getvalue(),
-        file_name="extracted_leads.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    if st.button("🗑️ Clear All Leads"):
-        st.session_state.leads_list = []
-        st.rerun()
-        
     df = pd.DataFrame(st.session_state.leads_list)
     st.divider()
     st.subheader("Current Lead List")
@@ -79,4 +67,13 @@ if st.session_state.leads_list:
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Leads')
     
-    
+    st.download_button(
+        label="📥 Download Excel Sheet",
+        data=output.getvalue(),
+        file_name="extracted_leads.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    if st.button("🗑️ Clear All Leads"):
+        st.session_state.leads_list = []
+        st.rerun()
