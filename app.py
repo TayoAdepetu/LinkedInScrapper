@@ -8,7 +8,6 @@ from io import BytesIO
 st.set_page_config(page_title="LinkedIn Google Sheets DB", page_icon="🟢")
 
 # --- GOOGLE SHEETS CONNECTION ---
-# This looks for credentials in your .streamlit/secrets.toml file
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def parse_html(html_content):
@@ -22,12 +21,26 @@ def parse_html(html_content):
         title_tag = item.find('span', {'data-anonymize': 'title'})
         company_tag = item.find('a', {'data-anonymize': 'company-name'})
         
+        # Skip skeleton/lazy-loaded items that only have a name but no real data
+        if not title_tag and not company_tag:
+            continue
+        
         new_leads.append({
             'Name': name,
             'Role': title_tag.get_text(strip=True) if title_tag else "N/A",
             'Company': company_tag.get_text(strip=True) if company_tag else "N/A"
         })
     return new_leads
+
+def read_existing_data():
+    """Safely read existing data from Google Sheets, returning empty DF if sheet is empty."""
+    try:
+        existing = conn.read(worksheet="Sheet1", usecols=[0, 1, 2])
+        existing = existing.dropna(how="all")
+        return existing
+    except Exception:
+        # Sheet is empty or not yet initialized — return empty DataFrame
+        return pd.DataFrame(columns=['Name', 'Role', 'Company'])
 
 # --- UI LAYOUT ---
 st.title("🟢 Google Sheets Lead Database")
@@ -39,9 +52,8 @@ if st.button("🚀 Sync to Google Sheets"):
     if html_input.strip():
         extracted_list = parse_html(html_input)
         if extracted_list:
-            # 1. Fetch current data from Google Sheets
-            existing_data = conn.read(worksheet="Sheet1", usecols=[0, 1, 2])
-            existing_data = existing_data.dropna(how="all")
+            # 1. Fetch current data from Google Sheets (safely)
+            existing_data = read_existing_data()
             
             # 2. Prepare new data
             df_new = pd.DataFrame(extracted_list)
@@ -51,34 +63,38 @@ if st.button("🚀 Sync to Google Sheets"):
             df_final = df_final.drop_duplicates(subset=['Name', 'Company'], keep='first')
             
             # 4. Update the Google Sheet
-            conn.update(worksheet="Sheet1", data=df_final)
-            
-            st.success(f"Successfully synced {len(extracted_list)} leads!")
-            st.rerun()
+            try:
+                conn.update(worksheet="Sheet1", data=df_final)
+                st.success(f"Successfully synced {len(extracted_list)} leads!")
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to write to Google Sheet: {e}")
+                st.info("Make sure the Google Sheet is set to 'Anyone with the link' → **Editor**.")
         else:
-            st.error("No leads found in HTML.")
+            st.error("No leads found in the pasted HTML.")
+    else:
+        st.warning("Please paste HTML first.")
 
 # --- DISPLAY & DOWNLOAD ---
-try:
-    df_display = conn.read(worksheet="Sheet1")
-    df_display = df_display.dropna(how="all")
+df_display = read_existing_data()
+
+if not df_display.empty:
+    st.divider()
     
-    if not df_display.empty:
-        st.divider()
+    # Download as Excel
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_display.to_excel(writer, index=False)
         
-        # Download as Excel (still useful for local copies)
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_display.to_excel(writer, index=False)
-            
-        st.download_button(
-            label="📥 Download local Excel backup",
-            data=output.getvalue(),
-            file_name="leads_backup.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-        st.subheader(f"Stored in Cloud ({len(df_display)} leads)")
-        st.dataframe(df_display, use_container_width=True)
-except:
-    st.info("Paste HTML to initialize the Google Sheet connection.")
+    st.download_button(
+        label="📥 Download local Excel backup",
+        data=output.getvalue(),
+        file_name="leads_backup.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    st.subheader(f"Stored in Cloud ({len(df_display)} leads)")
+    st.dataframe(df_display, use_container_width=True)
+else:
+    st.info("No leads yet. Paste LinkedIn HTML above and sync to get started.")
