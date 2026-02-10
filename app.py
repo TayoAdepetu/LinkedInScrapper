@@ -1,17 +1,16 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from bs4 import BeautifulSoup
-from datetime import datetime
 from io import BytesIO
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="LinkedIn Lead Extractor", page_icon="📊")
+st.set_page_config(page_title="LinkedIn Google Sheets DB", page_icon="🟢")
 
-# --- INITIALIZE SESSION STATE ---
-if 'leads_list' not in st.session_state:
-    st.session_state.leads_list = []
+# --- GOOGLE SHEETS CONNECTION ---
+# This looks for credentials in your .streamlit/secrets.toml file
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- PARSING LOGIC ---
 def parse_html(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     new_leads = []
@@ -31,49 +30,55 @@ def parse_html(html_content):
     return new_leads
 
 # --- UI LAYOUT ---
-st.title("🚀 Sales Navigator Lead Extractor")
-st.write("Paste your HTML below to extract names, roles, and companies.")
+st.title("🟢 Google Sheets Lead Database")
+st.write("Leads are synced directly to your private Google Sheet.")
 
-# Input Area
-html_input = st.text_area("Paste HTML code here:", height=300)
+html_input = st.text_area("Paste HTML code here:", height=200)
 
-if st.button("Extract & Add Leads"):
+if st.button("🚀 Sync to Google Sheets"):
     if html_input.strip():
-        extracted = parse_html(html_input)
-        if extracted:
-            combined = st.session_state.leads_list + extracted
-            df_temp = pd.DataFrame(combined).drop_duplicates(subset=['Name', 'Company'])
-            st.session_state.leads_list = df_temp.to_dict('records')
-            st.success(f"Added {len(extracted)} leads! Total in list: {len(st.session_state.leads_list)}")
+        extracted_list = parse_html(html_input)
+        if extracted_list:
+            # 1. Fetch current data from Google Sheets
+            existing_data = conn.read(worksheet="Sheet1", usecols=[0, 1, 2])
+            existing_data = existing_data.dropna(how="all")
+            
+            # 2. Prepare new data
+            df_new = pd.DataFrame(extracted_list)
+            
+            # 3. Combine and De-duplicate
+            df_final = pd.concat([existing_data, df_new], ignore_index=True)
+            df_final = df_final.drop_duplicates(subset=['Name', 'Company'], keep='first')
+            
+            # 4. Update the Google Sheet
+            conn.update(worksheet="Sheet1", data=df_final)
+            
+            st.success(f"Successfully synced {len(extracted_list)} leads!")
+            st.rerun()
         else:
-            st.error("No leads found. Check your HTML snippet.")
-    else:
-        st.warning("Please paste some HTML first.")
+            st.error("No leads found in HTML.")
 
-# --- DATA DISPLAY & DOWNLOAD ---
-if st.session_state.leads_list:
-    df = pd.DataFrame(st.session_state.leads_list)
-    st.divider()
+# --- DISPLAY & DOWNLOAD ---
+try:
+    df_display = conn.read(worksheet="Sheet1")
+    df_display = df_display.dropna(how="all")
     
-    # 1. Prepare the Excel file in memory FIRST
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Leads')
-    
-    # 2. Place the Download Button and Clear Button side-by-side at the top
-    col1, col2 = st.columns([1, 4])
-    with col1:
+    if not df_display.empty:
+        st.divider()
+        
+        # Download as Excel (still useful for local copies)
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_display.to_excel(writer, index=False)
+            
         st.download_button(
-            label="📥 Download Excel",
+            label="📥 Download local Excel backup",
             data=output.getvalue(),
-            file_name="extracted_leads.xlsx",
+            file_name="leads_backup.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-    # with col2:
-    #     if st.button("🗑️ Clear List"):
-    #         st.session_state.leads_list = []
-    #         st.rerun()
-
-    # 3. Finally, show the table
-    st.subheader("Current Lead List")
-    st.dataframe(df, use_container_width=True)
+        
+        st.subheader(f"Stored in Cloud ({len(df_display)} leads)")
+        st.dataframe(df_display, use_container_width=True)
+except:
+    st.info("Paste HTML to initialize the Google Sheet connection.")
